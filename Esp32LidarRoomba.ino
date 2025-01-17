@@ -14,6 +14,7 @@ void setup() {
     Serial.flush(); // to clear serial?
     delay(1000);
     Serial.begin(115200);  // Debug serial debug output
+    Serial.printf("Starting setup on %d core\n", xPortGetCoreID());
     // Setup WiFi, OTA, and other network services
     setupNetwork();
     /*
@@ -25,7 +26,7 @@ void setup() {
         NULL,
         2,
         &roombaTaskHandle,
-        1  // Core 1
+        0  // Core 0
     );
     
     xTaskCreatePinnedToCore(
@@ -35,7 +36,7 @@ void setup() {
         NULL,
         2,
         &lidarTaskHandle,
-        1  // Core 1
+        0  // Core 0
     );
     */
     xTaskCreatePinnedToCore(
@@ -45,7 +46,7 @@ void setup() {
         NULL,
         1,
         &networkTaskHandle,
-        0  // Core 0
+        1  // Core 1
     );
 }
 

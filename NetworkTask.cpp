@@ -83,7 +83,7 @@ void setupOTA() {
   });
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    logPrint(LOG_INFO, "OTA update progress: %u%%\r", (progress / (total / 100)));
+    logPrint(LOG_INFO, "Core %d - OTA update progress: %u%%\r",xPortGetCoreID(), (progress / (total / 100)));
   });
 
   ArduinoOTA.onError([](ota_error_t error) {

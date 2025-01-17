@@ -133,7 +133,6 @@ void setupNetwork() {
 // Network task
 void networkTask(void *parameter) {
     while(1) {
-        delay(100); // run every 100ms
         // Handle OTA updates
         ArduinoOTA.handle();
 
@@ -141,6 +140,6 @@ void networkTask(void *parameter) {
         
         handleTelnetLogging();       
         
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

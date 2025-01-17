@@ -1,3 +1,4 @@
+#include <sys/_stdint.h>
 #include <micro_ros_arduino.h>
 
 #include <stdio.h>
@@ -8,6 +9,7 @@
 #include <std_msgs/msg/string.h>
 
 #include "Logger.h"
+#define LED_PIN 2
 
 #define ROS_AGENT_IP "192.168.86.36" // IP of machine running micro-ROS agent
 #define ROS_AGENT_PORT 8888 // Port of machine running micro-ROS agent
@@ -25,6 +27,8 @@ rcl_timer_t timer;
 
 extern QueueHandle_t lidarQueue;
 const int LIDAR_BUFFER_SIZE = 256;
+void handleLidar();
+extern void processLidarData(char* buffer, int length); // TEMP bypassing LidarTask for now.
 
 static inline void set_microros_wifi_transport_only(char * agent_ip, uint agent_port) {
     static struct micro_ros_agent_locator locator;
@@ -43,9 +47,12 @@ static inline void set_microros_wifi_transport_only(char * agent_ip, uint agent_
 
 void setupMicroROS() {
 	logPrint(LOG_INFO, "Starting MicroROS on IP %s, port %d",ROS_AGENT_IP, ROS_AGENT_PORT);
+	pinMode(LED_PIN, OUTPUT);
+  	digitalWrite(LED_PIN, HIGH);
 	// Set the agent IP and port
 	set_microros_wifi_transport_only(ROS_AGENT_IP, ROS_AGENT_PORT);
 
+    // Get the default allocator
 	allocator = rcl_get_default_allocator();
 
 	// Initialize micro-ROS support
@@ -86,19 +93,30 @@ void publishScanMessage(char* buffer) {
 	scanMsg.data.size = strlen(scanMsg.data.data);
 	scanMsg.data.capacity = strlen(scanMsg.data.data);
     
-	rcl_publish(&scan_publisher, &scanMsg, NULL);
+	rcl_ret_t retval = rcl_publish(&scan_publisher, &scanMsg, NULL);
+	//We get a few errors every sec or so. but less than executor timeouts.
+	if(retval != RCL_RET_OK) {
+		logPrint(LOG_ERROR, "Error(%d) publishing scan. %s",retval, rcutils_get_error_string().str);
+		return;
+	}
 }
 
 void handleLidar() {
   char lidarBuffer[LIDAR_BUFFER_SIZE];
+  processLidarData(lidarBuffer, LIDAR_BUFFER_SIZE); // TEMP bypass LidarTask to check speed of timer
 
-    if (xQueueReceive(lidarQueue, lidarBuffer, 0) == pdTRUE) {
+    //if (xQueueReceive(lidarQueue, lidarBuffer, 0) == pdTRUE) {
         // Handle Lidar data
         publishScanMessage(lidarBuffer);
-    }
+		digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+    //}
 }
 
 void handleMicroROS() {
-    handleLidar();
-    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+    handleLidar(); // moved to timer. Leave this loop to read incoming commands only.
+    rcl_ret_t retval = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
+	//We get a lot of timeouts (8 per sec) at 10 or 100ms setting. But this is not responsible for bloccking publish
+	//if(retval != RCL_RET_OK) {
+		//logPrint(LOG_ERROR, "Error(%d) rclc_executor_spin_some timeout. %s",retval, rcutils_get_error_string().str);
+	//}
 }

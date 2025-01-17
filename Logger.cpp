@@ -2,12 +2,17 @@
 #include <string>
 #include <ctime>
 #include <sys/time.h>
+#include <WiFi.h>
 
 #include "Logger.h"
 
 static const size_t BUFFER_SIZE = 512;
 static char writeBuffer[BUFFER_SIZE];
 timeval _timeval;
+
+void handleTelnetLogging();
+WiFiClient telnetClient;
+extern WiFiServer telnetServer;
 
 // This class implements a circular buffer of BUFFER_SIZE bytes
 // This way we don't lose some history log that was written prior to connection.
@@ -94,21 +99,36 @@ void logPrint(LogLevel level, char* format, ...) {
     snprintf(timestamp, sizeof(timestamp), "[%02d:%02d:%02d.%06d] ",
       timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,_timeval.tv_usec );
 
-    // If Serial is connected we write to it else to the circular log buffer.  
-    // on ESP32 there is no guarrantee that someone is listening on other end of serial.  
-    if (Serial && Serial.availableForWrite()) {
-      // Flush circular buffer first.
-      circularLogBuffer.read(writeBuffer);
-      Serial.print(writeBuffer);
-
-      Serial.print(timestamp);
-      Serial.print(logLevelString(level));
-      Serial.println(buffer);
-    } else {
-      circularLogBuffer.write(timestamp);
-      circularLogBuffer.write(logLevelString(level));
-      circularLogBuffer.write(buffer);
-      circularLogBuffer.write("\n");
+    if (telnetClient && telnetClient.connected()) {
+		telnetClient.print(timestamp);
+		telnetClient.print(logLevelString(level));
+		telnetClient.println(buffer);
+    } 
+	else { // only used when telnet is not active.
+		circularLogBuffer.write(timestamp);
+		circularLogBuffer.write(logLevelString(level));
+		circularLogBuffer.write(buffer);
+		circularLogBuffer.write("\n");
     }
+	// If Serial is connected we write to.
+    // on ESP32 there is no guarantee that someone is listening on other end of serial.
+    if (Serial && Serial.availableForWrite()) {
+		Serial.print(timestamp);
+		Serial.print(logLevelString(level));
+		Serial.println(buffer);
+    }
+}
 
+// Create and maintain live telnet connection for logging.
+void handleTelnetLogging() {
+  if (telnetServer.hasClient()) {
+    if (!telnetClient || !telnetClient.connected()) {
+      if (telnetClient) telnetClient.stop();
+      telnetClient = telnetServer.available();
+      // Clear accumulated buffer.
+      circularLogBuffer.read(writeBuffer);
+      telnetClient.print(writeBuffer);
+      logPrint(LOG_INFO, "Welcome to ESP32-Roomba Telnet Console\n");
+    }
+  }
 }

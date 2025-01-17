@@ -8,6 +8,10 @@
 extern void setupMicroROS();
 extern void cleanupMicroROS();
 extern void handleMicroROS();
+extern void handleTelnetLogging();
+extern void setupLidar();
+
+WiFiServer telnetServer(23);  // Standard telnet port
 
 void syncTime() {
     struct tm timeinfo;
@@ -65,7 +69,7 @@ void setupWifi() {
 void restart() {
     // close all open connections etc for OTA update.
     logPrint(LOG_INFO,"Shutting down connections ...");
-    cleaupMicroROS();
+    cleanupMicroROS();
 
     delay(1000);  // Give some time for the OTA response to be sent
     ESP.restart(); // Programmatically trigger a reset
@@ -111,19 +115,23 @@ void setupOTA() {
 void setupNetwork() {
     // Connect to WiFi
     setupWifi();
+
+    // Start telnet server for logging
+    telnetServer.begin();
+    logPrint(LOG_INFO, "Telnet server started on port 23");
     
     // Start OTA server
     setupOTA(); 
 
+    setupLidar();
+
     // Setup Micro ROS
     setupMicroROS();
+
 }
 
-// Network task running on Core 0
+// Network task
 void networkTask(void *parameter) {
-    //uint8_t roombaBuffer[ROOMBA_BUFFER_SIZE];
-    //uint8_t lidarBuffer[LIDAR_BUFFER_SIZE];
-    
     while(1) {
         delay(100); // run every 100ms
         // Handle OTA updates
@@ -131,19 +139,7 @@ void networkTask(void *parameter) {
 
         handleMicroROS();
         
-        // Handle web server
-        //server.handleClient();
-        
-        // Check for data from serial tasks
-        //if (xQueueReceive(roombaQueue, roombaBuffer, 0) == pdTRUE) {
-            // Handle Roomba data (e.g., send to websocket clients)
-            //handleRoombaNetwork(roombaBuffer);
-        //}
-        
-       // if (xQueueReceive(lidarQueue, lidarBuffer, 0) == pdTRUE) {
-            // Handle Lidar data
-            //handleLidarNetwork(lidarBuffer);
-       // }
+        handleTelnetLogging();       
         
         vTaskDelay(pdMS_TO_TICKS(10));
     }

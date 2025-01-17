@@ -8,14 +8,12 @@ TaskHandle_t lidarTaskHandle = NULL;
 TaskHandle_t networkTaskHandle = NULL;
 
 extern void networkTask(void *parameter);
+extern void lidarTask(void *parameter);
 
 void setup() {
-    // Initialize serial ports
-    Serial.flush(); // to clear serial?
-    delay(1000);
     Serial.begin(115200);  // Debug serial debug output
-    Serial.printf("Starting setup on %d core\n", xPortGetCoreID());
-    // Setup WiFi, OTA, and other network services
+    Serial.printf("\n\n\nStarting setup on %d core\n", xPortGetCoreID());
+    // Setup WiFi, OTA, MicroROS and Telnet network services
     setupNetwork();
     /*
     // Create tasks
@@ -28,7 +26,7 @@ void setup() {
         &roombaTaskHandle,
         0  // Core 0
     );
-    
+    */
     xTaskCreatePinnedToCore(
         lidarTask,
         "LidarTask",
@@ -38,7 +36,7 @@ void setup() {
         &lidarTaskHandle,
         0  // Core 0
     );
-    */
+    
     xTaskCreatePinnedToCore(
         networkTask,
         "NetworkTask",

@@ -3,7 +3,9 @@
 #include <ESPmDNS.h>
 
 #include "WifiSetup.h" // Includes wifi information
-# include "Logger.h"
+#include "Logger.h"
+
+extern void setupMicroROS();
 
 void syncTime() {
   struct tm timeinfo;
@@ -108,6 +110,9 @@ void setupNetwork() {
     
     // Start OTA server
     setupOTA(); 
+
+    // Setup Micro ROS
+    setupMicroROS();
 }
 
 // Network task running on Core 0

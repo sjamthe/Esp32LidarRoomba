@@ -21,17 +21,17 @@ void lidarTask(void *parameter) {
     char lidarBuffer[LIDAR_BUFFER_SIZE];
     
     while(1) {
-        delay(100); // run every 100ms
-       /* processLidarData(lidarBuffer, sizeof(lidarBuffer));
+        processLidarData(lidarBuffer, sizeof(lidarBuffer));
         
-        if (xQueueSend(lidarQueue, lidarBuffer, 0) != pdPASS) {
-            //logPrint(LOG_ERROR, "Failed to send lidar data to queue");
+        //if (xQueueSend(lidarQueue, lidarBuffer, 0) != pdPASS) {
+        if (xQueueSendToFront(lidarQueue, lidarBuffer, 0) != pdPASS) {
+          // Fails a lot but looks like problem on ros2-agent side
+           // logPrint(LOG_ERROR, "Failed to send lidar data to queue");
         }
         else {
             //logPrint(LOG_INFO, "%s on CPU Core %d",lidarBuffer, xPortGetCoreID());
         }
-        */
-        vTaskDelay(pdMS_TO_TICKS(10)); // Small delay to prevent watchdog triggers
+        vTaskDelay(pdMS_TO_TICKS(100)); // Small delay to prevent watchdog triggers
     }
 }
 

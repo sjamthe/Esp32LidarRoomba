@@ -40,46 +40,98 @@ void handleLidar();
 void initScanPublisher();
 
 extern void processLidarData(char* buffer, int length); // TEMP bypassing LidarTask for now.
+/* 
+* Synchronize clock with the agent.
+*/
+void syncClock() {
+	// Sync timeout
+	const int timeout_ms = 1000;
 
-static inline void set_microros_wifi_transport_only(char * agent_ip, uint agent_port) {
-    static struct micro_ros_agent_locator locator;
-    locator.address.fromString(agent_ip);
-    locator.port = agent_port;
+	// Synchronize time with the agent
+	rmw_uros_sync_session(timeout_ms);
+	// After successful synchronization
+	if (rmw_uros_epoch_synchronized()) {
+		int64_t time_ns = rmw_uros_epoch_nanos();
+		
+		struct timeval tv;
+		tv.tv_sec = time_ns / 1000000000LL;
+		tv.tv_usec = (time_ns % 1000000000LL) / 1000;
+		
+		settimeofday(&tv, NULL);
+	}
+	struct tm timeinfo;
+    char timeStringBuff[50];  // Make sure this is large enough for your format
+	// Get and print local time
+    if (getLocalTime(&timeinfo)) {
+        logPrint(LOG_INFO, "Local time: ");
+        strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S %Z", &timeinfo);
+        logPrint(LOG_INFO, "Current time: %s", timeStringBuff);  
+    } else {
+        logPrint(LOG_ERROR, "Failed to obtain time");
+    }
+	logPrint(LOG_INFO, "Clock Synchronized with Micro-ROS agent");
+}
 
-    rmw_uros_set_custom_transport(
+void setupMicroROS() {
+	static struct micro_ros_agent_locator locator;
+
+	logPrint(LOG_INFO, "Starting MicroROS connecting to agent on IP %s, port %d",ROS_AGENT_IP, ROS_AGENT_PORT);
+	locator.address.fromString(ROS_AGENT_IP);
+    locator.port = ROS_AGENT_PORT;
+
+	pinMode(LED_PIN, OUTPUT);
+  	digitalWrite(LED_PIN, HIGH);
+
+	// Set the agent IP and port
+	if(rmw_uros_set_custom_transport(
         false,
         (void *) &locator,
         arduino_wifi_transport_open,
         arduino_wifi_transport_close,
         arduino_wifi_transport_write,
         arduino_wifi_transport_read
-    );
-}
+    ) != RMW_RET_OK) {
+		logPrint(LOG_ERROR, "Error establishing micro-ROS wifi support.");
+        ros_init_status = false;
+		digitalWrite(LED_PIN, LOW);
+        return;
+	}
+	logPrint(LOG_INFO, "Established support");
 
-void setupMicroROS() {
-	logPrint(LOG_INFO, "Starting MicroROS connecting to agent on IP %s, port %d",ROS_AGENT_IP, ROS_AGENT_PORT);
-	pinMode(LED_PIN, OUTPUT);
-  	digitalWrite(LED_PIN, HIGH);
-	// Set the agent IP and port
-	set_microros_wifi_transport_only(ROS_AGENT_IP, ROS_AGENT_PORT);
 
     // Get the default allocator
 	allocator = rcl_get_default_allocator();
+	if (!rcutils_allocator_is_valid(&allocator)) {
+		logPrint(LOG_ERROR, "Error: Failed to get Micro-ROS allocator");
+		digitalWrite(LED_PIN, LOW);
+		return;
+	}
+	logPrint(LOG_INFO, "MicroROS got allocator");
 
 	// Initialize micro-ROS support
-	rcl_ret_t retval = rclc_support_init(&support, 0, NULL, &allocator);
-	if(retval != RCL_RET_OK) {
-        logPrint(LOG_ERROR, "Error(%d) initializing micro-ROS support. %s",retval, rcutils_get_error_string());
-        ros_init_status = false;
-		rcl_reset_error();
-        return;
+	if (rmw_uros_ping_agent(100, 10) == RMW_RET_OK) {
+		rcl_ret_t retval = rclc_support_init(&support, 0, NULL, &allocator);
+		if(retval != RCL_RET_OK) {
+			logPrint(LOG_ERROR, "Error(%d) initializing micro-ROS support.", retval);
+			ros_init_status = false;
+			vTaskDelay(pdMS_TO_TICKS(1000));
+			return;
+		}
+	} else {
+		logPrint(LOG_ERROR, 
+		"Agent not responding. Make sure  micro_ros_agent is running on IP %s, port %d",ROS_AGENT_IP, ROS_AGENT_PORT);
+		ros_init_status = false;
+		vTaskDelay(pdMS_TO_TICKS(1000));
+		return;
 	}
   	ros_init_status = true;
 	logPrint(LOG_INFO, "MicroROS support started connecting to agent on IP %s, port %d",ROS_AGENT_IP, ROS_AGENT_PORT);
 
+	syncClock();
+
 	// Create node
 	node = rcl_get_zero_initialized_node(); // get zero initialized node
-	retval = rclc_node_init_default(&node, ROS_NODE_NAME, ROS_NAMESPACE, &support);
+	rcl_ret_t retval = rclc_node_init_default(&node, ROS_NODE_NAME, ROS_NAMESPACE, &support);
 	if(retval != RCL_RET_OK) {
         logPrint(LOG_ERROR, "Error(%d) creating micro-ROS node. %s",retval, rcutils_get_error_string());
 		rcl_reset_error();
@@ -166,18 +218,18 @@ void readLidarData() {
 }
 
 void handleMicroROS() {
-    // if ros is not connected try to reconnect.
-    if(!ros_init_status) {
-      setupMicroROS();
-      vTaskDelay(pdMS_TO_TICKS(100));
-      return;
-    }
+	// only read data and publish if agent is connected. 
+	if (ros_init_status && rmw_uros_ping_agent(100, 10) == RMW_RET_OK) {
+		readLidarData(); // moved to timer. Leave this loop to read incoming commands only.
+	} else if (!ros_init_status && rmw_uros_ping_agent(100, 10) == RMW_RET_OK) {
+		setupMicroROS();
+	} else {
+		logPrint(LOG_ERROR, "MicroROS-agent not connected. Ping failed.");
+		if(!ros_init_status) cleanupMicroROS();
+		vTaskDelay(pdMS_TO_TICKS(1000));
+		ros_init_status = false;
+		return;
+	}
 
-    readLidarData(); // moved to timer. Leave this loop to read incoming commands only.
-    
 	rcl_ret_t retval = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
-	/*if(retval != RCL_RET_OK && retval != RCL_RET_TIMEOUT) {
-		logPrint(LOG_ERROR, "Error(%d) rclc_executor_spin_some",retval);
-		rcl_reset_error();
-	}*/
 }

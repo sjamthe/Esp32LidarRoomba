@@ -10,36 +10,32 @@ QueueHandle_t lidarQueue;
 TaskHandle_t lidarTaskHandle = NULL;
 bool lidar_status = false;
 
-void processLidarData(char* buffer, int length) {
+void processLidarData(MeasurementData *measurements, size_t count, char* buffer, int length) {
     // Process Lidar data
-    //temp - fill with time for now
-    timeval _timeval;
-    gettimeofday(&_timeval, NULL); 
-    struct tm timeinfo;
-    localtime_r(&_timeval.tv_sec, &timeinfo);
-
-    snprintf(buffer, 17, "%02d:%02d:%02d.%06d",
-      timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec,_timeval.tv_usec );
+    sprintf(buffer, "Angle: %.2f°, Distance: %.2fmm, Quality: %d\n", 
+			measurements[0].angle, measurements[0].distance, measurements[0].quality);
 }
 
+
+bool firstMeasurement = true;
 void lidarTask(void *parameter) {
-    //uint8_t roombaBuffer[ROOMBA_BUFFER_SIZE];
     char lidarBuffer[LIDAR_BUFFER_SIZE];
-    
+    MeasurementData measurements[lidar.EXPRESS_MEASUREMENTS_PER_SCAN];
+    size_t count = 0;
+
+
     while(1) {
-        if(lidarTask) {
-            processLidarData(lidarBuffer, sizeof(lidarBuffer));
-            
-            //if (xQueueSend(lidarQueue, lidarBuffer, 0) != pdPASS) {
-            if (xQueueSendToFront(lidarQueue, lidarBuffer, 0) != pdPASS) {
-              // Fails a lot but looks like problem on ros2-agent side
-              // logPrint(LOG_ERROR, "Failed to send lidar data to queue");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        sl_result ans = lidar.readMeasurement(measurements, count);
+        if (ans == SL_RESULT_OK) {
+            if (firstMeasurement) {
+                logPrint(LOG_INFO,"First Lidar measurement received");
+                firstMeasurement = false;
             }
-            else {
-                //logPrint(LOG_INFO, "%s on CPU Core %d",lidarBuffer, xPortGetCoreID());
-            }
-            vTaskDelay(pdMS_TO_TICKS(100)); // Small delay to prevent watchdog triggers
-        }
+            processLidarData(measurements, count, lidarBuffer, sizeof(lidarBuffer));
+            // sent to Front as only latest measurement matters.
+            xQueueSendToFront(lidarQueue, lidarBuffer, 0);
+        } 
     }
 }
 
@@ -110,7 +106,7 @@ void setupLidar() {
         "LidarTask",
         8192,
         NULL,
-        2,
+        1, // IMPORTANT: Don't drop priority for Lidar task. It needs to be responsive.
         &lidarTaskHandle,
         0  // Core 0
     );

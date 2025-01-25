@@ -9,9 +9,9 @@ extern void setupMicroROS();
 extern void cleanupMicroROS();
 extern void handleMicroROS();
 extern void handleTelnetLogging();
-extern void setupLidar();
 
 WiFiServer telnetServer(23);  // Standard telnet port
+TaskHandle_t networkTaskHandle = NULL;
 
 void syncTime() {
     struct tm timeinfo;
@@ -112,24 +112,6 @@ void setupOTA() {
     logPrint(LOG_INFO, "OTA service started");
 }
 
-void setupNetwork() {
-    // Connect to WiFi
-    setupWifi();
-
-    // Start telnet server for logging
-    telnetServer.begin();
-    logPrint(LOG_INFO, "Telnet server started on port 23");
-    
-    // Start OTA server
-    setupOTA(); 
-
-    setupLidar();
-
-    // Setup Micro ROS
-    setupMicroROS();
-
-}
-
 // Network task
 void networkTask(void *parameter) {
     while(1) {
@@ -142,4 +124,29 @@ void networkTask(void *parameter) {
         
         vTaskDelay(pdMS_TO_TICKS(100));
     }
+}
+
+void setupNetwork() {
+    // Connect to WiFi
+    setupWifi();
+
+    // Start telnet server for logging
+    telnetServer.begin();
+    logPrint(LOG_INFO, "Telnet server started on port 23");
+    
+    // Start OTA server
+    setupOTA(); 
+
+    // Setup Micro ROS
+    setupMicroROS();
+
+    xTaskCreatePinnedToCore(
+        networkTask,
+        "NetworkTask",
+        8192,
+        NULL,
+        1,
+        &networkTaskHandle,
+        1  // Core 1
+    );
 }

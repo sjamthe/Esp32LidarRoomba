@@ -1,8 +1,10 @@
 #include "Logger.h"
 #include <sys/time.h> // for timeval
 
-const int LIDAR_BUFFER_SIZE = 256;
+int LIDAR_BUFFER_SIZE = 256;
 QueueHandle_t lidarQueue;
+TaskHandle_t lidarTaskHandle = NULL;
+bool lidar_status = false;
 
 void processLidarData(char* buffer, int length) {
     // Process Lidar data
@@ -20,7 +22,7 @@ void lidarTask(void *parameter) {
     //uint8_t roombaBuffer[ROOMBA_BUFFER_SIZE];
     char lidarBuffer[LIDAR_BUFFER_SIZE];
     
-    while(1) {
+    while(lidar_status) {
         processLidarData(lidarBuffer, sizeof(lidarBuffer));
         
         //if (xQueueSend(lidarQueue, lidarBuffer, 0) != pdPASS) {
@@ -38,4 +40,15 @@ void lidarTask(void *parameter) {
 void setupLidar() {
     // Setup queue for IPC
     lidarQueue = xQueueCreate(1, LIDAR_BUFFER_SIZE);
+    xTaskCreatePinnedToCore(
+        lidarTask,
+        "LidarTask",
+        8192,
+        NULL,
+        2,
+        &lidarTaskHandle,
+        0  // Core 0
+    );
+
+    lidar_status = true;
 }

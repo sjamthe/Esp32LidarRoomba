@@ -35,7 +35,8 @@ static unsigned long last_scan_publisher_create = 0;
 #define PUBLISHER_TIMEOUT 5000
 
 extern QueueHandle_t lidarQueue;
-const int LIDAR_BUFFER_SIZE = 256;
+extern bool lidar_status;
+extern int LIDAR_BUFFER_SIZE;
 void handleLidar();
 void initScanPublisher();
 
@@ -198,7 +199,6 @@ void publishScanMessage(char* buffer) {
 	rcl_ret_t retval = rcl_publish(&scan_publisher, &scanMsg, NULL);
 	//With the new best effort policy we din't get errors even if ros-agent is down.
 	if(retval == RCL_RET_OK) {
-    	digitalWrite(LED_PIN, !digitalRead(LED_PIN));
 		last_successful_publish = millis();
 	} else {
 		static unsigned long gap = millis() - last_successful_publish;
@@ -211,25 +211,33 @@ void publishScanMessage(char* buffer) {
 void readLidarData() {
   char lidarBuffer[LIDAR_BUFFER_SIZE];
 
-    if (xQueueReceive(lidarQueue, lidarBuffer, 0) == pdTRUE) {
+    if (lidar_status && xQueueReceive(lidarQueue, lidarBuffer, 0) == pdTRUE) {
         // Handle Lidar data
         publishScanMessage(lidarBuffer);
     }
 }
 
+unsigned long current_time = millis();
 void handleMicroROS() {
-	// only read data and publish if agent is connected. 
-	if (ros_init_status && rmw_uros_ping_agent(100, 10) == RMW_RET_OK) {
-		readLidarData(); // moved to timer. Leave this loop to read incoming commands only.
-	} else if (!ros_init_status && rmw_uros_ping_agent(100, 10) == RMW_RET_OK) {
+	
+  	if (!ros_init_status) {
 		setupMicroROS();
-	} else {
-		logPrint(LOG_ERROR, "MicroROS-agent not connected. Ping failed.");
-		if(!ros_init_status) cleanupMicroROS();
-		vTaskDelay(pdMS_TO_TICKS(1000));
-		ros_init_status = false;
-		return;
+		current_time = millis();
 	}
-
+	//every 10 seconds check micro-ros ping status as it is too expensive to do every loop.
+	if((millis() - current_time) > 10000) {
+		if(rmw_uros_ping_agent(100, 10) != RMW_RET_OK) {
+			logPrint(LOG_ERROR, "MicroROS-agent not connected. Ping failed.");
+			if(!ros_init_status) cleanupMicroROS();
+			vTaskDelay(pdMS_TO_TICKS(1000));
+			ros_init_status = false;
+			return;
+		}
+		current_time = millis();
+	}
+	// only read data and publish if agent is connected. 
+	readLidarData(); 
+	
+	digitalWrite(LED_PIN, !digitalRead(LED_PIN));
 	rcl_ret_t retval = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
 }

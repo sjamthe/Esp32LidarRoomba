@@ -6,7 +6,6 @@
 #define ROS_NODE_NAME "esp32_lidar_roomba_node"
 #define ROS_NAMESPACE ""
 
-#define LIDAR_BUFFER_SIZE   256
 #define LIDAR_SERIAL Serial2
 #define LIDAR_RX_PIN 16
 #define LIDAR_TX_PIN 17

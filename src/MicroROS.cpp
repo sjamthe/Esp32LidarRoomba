@@ -12,6 +12,7 @@
 
 #include "Logger.h"
 #include "Constants.h"
+#include "RPLidar/RPLidar.h"
 
 rcl_publisher_t scan_publisher;
 std_msgs__msg__String scanMsg;
@@ -28,6 +29,7 @@ static unsigned long last_scan_publisher_create = 0;
 
 extern QueueHandle_t lidarQueue;
 extern bool lidar_status;
+
 void handleLidar();
 void initScanPublisher();
 
@@ -170,23 +172,28 @@ void initScanPublisher() {
 	logPrint(LOG_INFO, "MicroROS publishing /scan topic now.");
 }
 
-void publishScanMessage(char* buffer) {
-	// TODO: With the new best effort policy we din't get errors even if ros-agent is down.
-	// so need a new way to reestablish connection after agent comes back up. 
+void publishScanMessage(MeasurementData *measurements) {
+	
 	if(!scan_publisher_status && (millis() - last_scan_publisher_create) > 50000) {
-		initScanPublisher();
 		vTaskDelay(pdMS_TO_TICKS(100)); // delay a bit else we will try ro call same function again.
+		initScanPublisher();
 	}
 	if(!rcl_publisher_is_valid(&scan_publisher)) {
 		//logPrint(LOG_ERROR, "Scan publisher is not valid");
 		return; // This is needed as publisher takes 50 seconds to start.
 	}
+	char buffer[254];
+	sprintf(buffer, "First Angle: %.2f°, Distance: %.2fmm, Lasr Angle: %.2f°, Distance: %.2fmm, \n", 
+			measurements[0].angle, measurements[0].distance,
+			measurements[95].angle, measurements[85].distance);
 
 	scanMsg.data.data = buffer;
 	scanMsg.data.size = strlen(scanMsg.data.data);
 	scanMsg.data.capacity = strlen(scanMsg.data.data);
     
 	rcl_ret_t retval = rcl_publish(&scan_publisher, &scanMsg, NULL);
+	digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+
 	//With the new best effort policy we din't get errors even if ros-agent is down.
 	if(retval == RCL_RET_OK) {
 		last_successful_publish = millis();
@@ -199,11 +206,11 @@ void publishScanMessage(char* buffer) {
 }
 
 void readLidarData() {
-  char lidarBuffer[LIDAR_BUFFER_SIZE];
+  	MeasurementData measurements[RPLidar::EXPRESS_MEASUREMENTS_PER_SCAN];
 
-    if (lidar_status && xQueueReceive(lidarQueue, lidarBuffer, 0) == pdTRUE) {
+    if (lidar_status && xQueueReceive(lidarQueue, measurements, 0) == pdTRUE) {
         // Handle Lidar data
-        publishScanMessage(lidarBuffer);
+        publishScanMessage(measurements);
     }
 }
 
@@ -228,6 +235,5 @@ void handleMicroROS() {
 	// only read data and publish if agent is connected. 
 	readLidarData(); 
 	
-	digitalWrite(LED_PIN, !digitalRead(LED_PIN));
 	rcl_ret_t retval = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
 }

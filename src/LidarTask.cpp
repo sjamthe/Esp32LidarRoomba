@@ -7,35 +7,68 @@
 RPLidar lidar(LIDAR_SERIAL, LIDAR_RX_PIN, LIDAR_TX_PIN, LIDAR_MOTOR_PIN); 
 
 QueueHandle_t lidarQueue;
-TaskHandle_t lidarTaskHandle = NULL;
+//TaskHandle_t lidarTaskHandle = NULL;
 bool lidar_status = false;
+unsigned long startMillis = 0;
+unsigned long measurementCount = 0;
+unsigned long rpsCount = 0;
+unsigned long errorCount = 0;
+unsigned long timeoutCount = 0;
+bool firstMeasurement = true;
+bool checkLidarHealth();
+void setupLidar();
 
-void processLidarData(MeasurementData *measurements, size_t count, char* buffer, int length) {
-    // Process Lidar data
-    sprintf(buffer, "Angle: %.2f°, Distance: %.2fmm, Quality: %d\n", 
-			measurements[0].angle, measurements[0].distance, measurements[0].quality);
+void getMeasurements() {
+
+    size_t count = 0;
+    MeasurementData measurements[RPLidar::EXPRESS_MEASUREMENTS_PER_SCAN];
+    memset(measurements, 0, sizeof(measurements));
+
+    //vTaskDelay(pdMS_TO_TICKS(50));
+    sl_result ans = lidar.readMeasurement(measurements, count);
+    if (ans == SL_RESULT_OK) {
+        if (firstMeasurement) {
+            startMillis = millis();
+            logPrint(LOG_INFO,"First Lidar measurement received");
+            firstMeasurement = false;
+        }
+        // sent to Front as only latest measurement matters.
+        //xQueueSendToFront(lidarQueue, measurements, 0);
+    } 
+
+    //print stats every 10 seconds
+    measurementCount+= count;
+
+    for (int i=0; i<count; i++) {
+        if(measurements[i].startFlag)   rpsCount++;
+    }
+    unsigned long now = millis();
+    if ((now - startMillis) > 10000) {
+        if (measurementCount == 0) {
+            checkLidarHealth(); // Check
+        }
+
+        Serial.printf("Errors: %u. Timeouts: %u, Measurements: %u, Measurements per second: %04.0f, rps: %04.0f\n",
+            errorCount, timeoutCount, measurementCount, measurementCount/((now-startMillis)/1000.0), rpsCount/((now-startMillis)/1000.0));
+        Serial.printf("First measurement - Angle: %.2f°, Distance: %.2fmm, Quality: %d\n", 
+                        measurements[0].angle, measurements[0].distance, measurements[0].quality);
+        Serial.printf("Last measurement - Angle: %.2f°, Distance: %.2fmm, Quality: %d\n", 
+                        measurements[95].angle, measurements[95].distance, measurements[95].quality);
+        startMillis = millis();
+        measurementCount = 0;
+        rpsCount = 0;
+        errorCount = 0;
+    }
 }
 
-
-bool firstMeasurement = true;
 void lidarTask(void *parameter) {
-    char lidarBuffer[LIDAR_BUFFER_SIZE];
-    MeasurementData measurements[lidar.EXPRESS_MEASUREMENTS_PER_SCAN];
-    size_t count = 0;
 
+    setupLidar();
 
-    while(1) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-        sl_result ans = lidar.readMeasurement(measurements, count);
-        if (ans == SL_RESULT_OK) {
-            if (firstMeasurement) {
-                logPrint(LOG_INFO,"First Lidar measurement received");
-                firstMeasurement = false;
-            }
-            processLidarData(measurements, count, lidarBuffer, sizeof(lidarBuffer));
-            // sent to Front as only latest measurement matters.
-            xQueueSendToFront(lidarQueue, lidarBuffer, 0);
-        } 
+    for(;;) {
+        //vTaskDelay(pdMS_TO_TICKS(50));
+        getMeasurements();
+        vTaskDelay(pdMS_TO_TICKS(5)); // This value is very critical. 10 works. 50 made scans stop totally. 0 crashes.
     }
 }
 
@@ -52,6 +85,7 @@ bool checkLidarHealth() {
 }
 
 bool startLidarScan() {
+    //LIDAR_SERIAL.setRxBufferSize(1024); // incfease buffer size to 1KB - didn't help performance
     // Reset device before starting
     lidar.reset();
     delay(2000);  // Give it time to reset
@@ -62,7 +96,8 @@ bool startLidarScan() {
     delay(1000);  // Give motor time to reach speed
 
     // Start scan
-    logPrint(LOG_INFO,"Starting scan...");
+    logPrint(LOG_INFO,"Starting scan  on Core %d ...", xPortGetCoreID());
+    //if (!lidar.startScan()) {
     if (!lidar.startExpressScan()) {
         logPrint(LOG_ERROR,"Failed to start express scan");
         lidar.stopMotor();
@@ -99,15 +134,5 @@ void setupLidar() {
     lidar_status = true;
 
     // Setup queue for IPC
-    lidarQueue = xQueueCreate(1, LIDAR_BUFFER_SIZE);
-
-    xTaskCreatePinnedToCore(
-        lidarTask,
-        "LidarTask",
-        8192,
-        NULL,
-        1, // IMPORTANT: Don't drop priority for Lidar task. It needs to be responsive.
-        &lidarTaskHandle,
-        0  // Core 0
-    );
+    lidarQueue = xQueueCreate(1, sizeof(MeasurementData*) * RPLidar::EXPRESS_MEASUREMENTS_PER_SCAN);
 }

@@ -32,7 +32,6 @@ void syncTime() {
     
     // Get and print local time
     if (getLocalTime(&timeinfo)) {
-        logPrint(LOG_INFO, "Local time: ");
         strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S %Z", &timeinfo);
         logPrint(LOG_INFO, "Current time: %s", timeStringBuff);  
     } else {

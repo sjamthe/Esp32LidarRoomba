@@ -4,6 +4,8 @@
 #include "Arduino.h"
 #include <sys/_stdint.h>
 #include "RPLidar.h"
+#include "../Logger.h"
+
 
 static uint32_t _varbitscale_decode(uint32_t scaled, uint32_t &scaleLevel)
 		{
@@ -149,17 +151,17 @@ bool RPLidar::startExpressScan(uint8_t expressScanType) {
 	// Verify response descriptor
   if(expressScanType == EXPRESS_TYPE_LEGACY) {
     if (verifyResponseDescriptor(MULTI_RESP_MODE, RESP_TYPE_EXPRESS_LEGACY_SCAN, 84)) {
-			Serial.println("Response is of type RESP_TYPE_EXPRESS_LEGACY_SCAN");
+			logPrint(LOG_INFO,"Response is of type RESP_TYPE_EXPRESS_LEGACY_SCAN");
 			_scanResponseMode = RESP_TYPE_EXPRESS_LEGACY_SCAN;
 			return true;
     	} else if(verifyResponseDescriptor(MULTI_RESP_MODE, RESP_TYPE_EXPRESS_DENSE_SCAN, 84)) {
-			Serial.println("Response is of type RESP_TYPE_EXPRESS_DENSE_SCAN");
+			logPrint(LOG_INFO,"Response is of type RESP_TYPE_EXPRESS_DENSE_SCAN");
 			_scanResponseMode = RESP_TYPE_EXPRESS_DENSE_SCAN;
 			return true;
 	  	}
 	} else {
     	if (verifyResponseDescriptor(MULTI_RESP_MODE, RESP_TYPE_EXPRESS_EXTENDED_SCAN, 132)) {
-		    Serial.println("Response is of type RESP_TYPE_EXPRESS_EXTENDED_SCAN");
+		    logPrint(LOG_INFO,"Response is of type RESP_TYPE_EXPRESS_EXTENDED_SCAN");
           	_scanResponseMode = RESP_TYPE_EXPRESS_EXTENDED_SCAN;
           	return true;
     	}
@@ -186,7 +188,7 @@ bool RPLidar::getHealth(DeviceHealth& health) {
     //Serial.println("Health command sent, waiting for response...");
     
     if (!waitResponseHeader()) {
-        Serial.println("Failed to get health response header");
+        logPrint(LOG_ERROR,"Failed to get health response header");
         return false;
     }
 
@@ -199,7 +201,7 @@ bool RPLidar::getHealth(DeviceHealth& health) {
     uint8_t buffer[3];
     size_t bytesRead = _serial.readBytes(buffer, _responseDescriptor.length);
     if (bytesRead != _responseDescriptor.length) {
-        Serial.printf("Expected %lu bytes but got %d bytes\n", _responseDescriptor.length, bytesRead);
+        logPrint(LOG_ERROR,"Expected %lu bytes but got %d bytes\n", _responseDescriptor.length, bytesRead);
         return false;
     }
     
@@ -217,7 +219,7 @@ bool RPLidar::getSampleRate(DeviceScanRate &scanRate) {
     //Serial.println("SampleRate command sent, waiting for response...");
     
     if (!waitResponseHeader()) {
-        Serial.println("Failed to get health response header");
+        logPrint(LOG_ERROR,"Failed to get sample rate response header");
         return false;
     }
 	uint32_t expectedLength = 4; 
@@ -230,7 +232,7 @@ bool RPLidar::getSampleRate(DeviceScanRate &scanRate) {
     uint8_t buffer[expectedLength];
     size_t bytesRead = _serial.readBytes(buffer, _responseDescriptor.length);
     if (bytesRead != _responseDescriptor.length) {
-        Serial.printf("Expected %lu bytes but got %d bytes\n", _responseDescriptor.length, bytesRead);
+        logPrint(LOG_ERROR,"Expected %lu bytes but got %d bytes\n", _responseDescriptor.length, bytesRead);
         return false;
     }
     
@@ -248,7 +250,7 @@ bool RPLidar::getInfo(DeviceInfo& info) {
     //Serial.println("Info command sent, waiting for response...");
     
     if (!waitResponseHeader()) {
-        Serial.println("Failed to get info response header");
+        logPrint(LOG_ERROR,"Failed to get info response header");
         return false;
     }
 
@@ -261,7 +263,7 @@ bool RPLidar::getInfo(DeviceInfo& info) {
     uint8_t buffer[20];
     size_t bytesRead = _serial.readBytes(buffer, _responseDescriptor.length);
     if (bytesRead != _responseDescriptor.length) {
-        Serial.printf("Expected %lu bytes but got %d bytes\n", _responseDescriptor.length, bytesRead);
+        logPrint(LOG_ERROR,"Expected %lu bytes but got %d bytes\n", _responseDescriptor.length, bytesRead);
         return false;
     }
     
@@ -318,7 +320,7 @@ sl_result RPLidar::_waitUltraCapsuledNode(sl_lidar_response_ultra_capsule_measur
 
 		size_t bytesRead = _serial.readBytes(recvBuffer, recvSize);
 		if(bytesRead < recvSize) {
-			Serial.println("Error: read less than available should not happen");
+			logPrint(LOG_ERROR,"Error: read less than available should not happen");
 			continue;
 		}
 
@@ -668,28 +670,28 @@ bool RPLidar::waitResponseHeader() {
                         }
                     }
                 }
-                Serial.println("Timeout waiting for second sync byte");
+                logPrint(LOG_ERROR,"Timeout waiting for second sync byte");
                 return false;
             }
         }
     }
-    Serial.println("Timeout waiting for first sync byte");
+    logPrint(LOG_ERROR,"Timeout waiting for first sync byte");
     return false;
 }
 
 bool RPLidar::verifyResponseDescriptor(uint8_t expectedMode, uint8_t expectedType, uint32_t expectedLength) {
     if (_responseDescriptor.mode != expectedMode) {
-        Serial.printf("Wrong response Mode: got 0x%02X, expected 0x%02X\n", 
+        logPrint(LOG_ERROR,"Wrong response Mode: got 0x%02X, expected 0x%02X\n", 
                      _responseDescriptor.mode, expectedMode);
         return false;
     }
     if (_responseDescriptor.dataType != expectedType) {
-        Serial.printf("Wrong response type: got 0x%02X, expected 0x%02X\n", 
+        logPrint(LOG_ERROR,"Wrong response type: got 0x%02X, expected 0x%02X\n", 
                      _responseDescriptor.dataType, expectedType);
         return false;
     }
     if (expectedLength != 0 && _responseDescriptor.length != expectedLength) {
-        Serial.printf("Wrong response length: got %lu, expected %lu\n", 
+        logPrint(LOG_ERROR,"Wrong response length: got %lu, expected %lu\n", 
                      _responseDescriptor.length, expectedLength);
         return false;
     }

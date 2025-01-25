@@ -11,13 +11,7 @@
 #include <std_msgs/msg/string.h>
 
 #include "Logger.h"
-#define LED_PIN 2
-
-#define ROS_AGENT_IP "192.168.86.36" // IP of machine running micro-ROS agent, TODO: Ad webapi to set this.
-#define ROS_AGENT_PORT 8888 // Port of machine running micro-ROS agent. TODO: Ad webapi to set this.
-
-#define ROS_NODE_NAME "esp32_lidar_roomba_node"
-#define ROS_NAMESPACE ""
+#include "Constants.h"
 
 rcl_publisher_t scan_publisher;
 std_msgs__msg__String scanMsg;
@@ -32,11 +26,8 @@ static bool scan_publisher_status = false;
 static unsigned long last_successful_publish = 0;
 static unsigned long last_scan_publisher_create = 0;
 
-#define PUBLISHER_TIMEOUT 5000
-
 extern QueueHandle_t lidarQueue;
 extern bool lidar_status;
-extern int LIDAR_BUFFER_SIZE;
 void handleLidar();
 void initScanPublisher();
 
@@ -64,7 +55,6 @@ void syncClock() {
     char timeStringBuff[50];  // Make sure this is large enough for your format
 	// Get and print local time
     if (getLocalTime(&timeinfo)) {
-        logPrint(LOG_INFO, "Local time: ");
         strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S %Z", &timeinfo);
         logPrint(LOG_INFO, "Current time: %s", timeStringBuff);  
     } else {
